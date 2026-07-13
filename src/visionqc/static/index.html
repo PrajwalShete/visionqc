@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en" data-theme="business">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VisionQC — Operator Dashboard</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <style>
+      :root {
+        --vqc-bg: #0a0e14;
+        --vqc-panel: #11161f;
+        --vqc-panel-2: #161d28;
+        --vqc-border: #232c3a;
+        --vqc-accent: #38bdf8;
+      }
+      html,
+      body {
+        background: var(--vqc-bg);
+      }
+      body {
+        font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+        color: #cbd5e1;
+      }
+      .vqc-panel {
+        background: var(--vqc-panel);
+        border: 1px solid var(--vqc-border);
+        border-radius: 0.5rem;
+      }
+      .vqc-label {
+        font-size: 0.62rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .vqc-scroll::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .vqc-scroll::-webkit-scrollbar-thumb {
+        background: #2a3444;
+        border-radius: 4px;
+      }
+      .vqc-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #live-image {
+        image-rendering: auto;
+        background:
+          repeating-linear-gradient(45deg, #0d1219 0 10px, #0a0e14 10px 20px);
+      }
+      .frame-pass {
+        box-shadow: 0 0 0 4px #22c55e inset, 0 0 24px rgba(34, 197, 94, 0.35);
+      }
+      .frame-reject {
+        box-shadow: 0 0 0 4px #ef4444 inset, 0 0 24px rgba(239, 68, 68, 0.35);
+      }
+      .frame-fault {
+        box-shadow: 0 0 0 4px #f59e0b inset, 0 0 24px rgba(245, 158, 11, 0.35);
+      }
+      .live-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 9999px;
+        display: inline-block;
+      }
+      .dot-on {
+        background: #22c55e;
+        box-shadow: 0 0 8px #22c55e;
+      }
+      .dot-off {
+        background: #ef4444;
+        box-shadow: 0 0 8px #ef4444;
+        animation: pulse 1s infinite;
+      }
+      .dot-wait {
+        background: #f59e0b;
+        box-shadow: 0 0 8px #f59e0b;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .tile-num {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div id="app" class="mx-auto max-w-[1600px] p-3">
+      <!-- Alarm banner -->
+      <div id="alarm-banner" class="mb-3 space-y-2 hidden"></div>
+
+      <!-- Header -->
+      <header
+        class="vqc-panel mb-3 flex flex-wrap items-center justify-between gap-3 px-4 py-2"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="flex h-9 w-9 items-center justify-center rounded bg-sky-500/15 text-sky-400"
+          >
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+              <path
+                d="M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5c-1.7-4.4-6-7.5-11-7.5Zm0 12a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-2a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
+              />
+            </svg>
+          </div>
+          <div>
+            <div class="text-lg font-bold tracking-wide text-slate-100">
+              Vision<span class="text-sky-400">QC</span>
+            </div>
+            <div class="vqc-label -mt-0.5">Line Controller · Operator</div>
+          </div>
+          <span
+            id="line-state"
+            class="badge badge-lg ml-2 border-none bg-slate-600 font-bold text-white"
+            >—</span
+          >
+        </div>
+        <div class="flex items-center gap-5">
+          <div class="flex items-center gap-2">
+            <span id="conn-dot" class="live-dot dot-wait"></span>
+            <span id="conn-label" class="vqc-label">CONNECTING</span>
+          </div>
+          <div class="text-right">
+            <div id="clock" class="tile-num text-base text-slate-100">--:--:--</div>
+            <div id="clock-date" class="vqc-label -mt-0.5">----</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main grid -->
+      <div class="grid grid-cols-12 gap-3">
+        <!-- Left: live inspection -->
+        <section class="col-span-12 xl:col-span-5">
+          <div class="vqc-panel p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="vqc-label">Live Inspection</span>
+              <span id="image-kind" class="vqc-label text-sky-400">—</span>
+            </div>
+            <div
+              id="image-frame"
+              class="relative aspect-square w-full overflow-hidden rounded transition-shadow"
+            >
+              <img
+                id="live-image"
+                alt="live inspection frame"
+                class="h-full w-full object-cover"
+              />
+              <div
+                id="image-overlay"
+                class="absolute left-2 top-2 flex flex-col gap-1 text-xs"
+              >
+                <span
+                  id="overlay-product"
+                  class="rounded bg-black/70 px-2 py-0.5 font-bold text-slate-100"
+                  >awaiting frames…</span
+                >
+                <span
+                  id="overlay-outcome"
+                  class="badge badge-sm border-none bg-slate-700 font-bold text-white"
+                  >IDLE</span
+                >
+              </div>
+              <div
+                id="image-empty"
+                class="absolute inset-0 flex items-center justify-center text-sm text-slate-600"
+              >
+                no evidence yet
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <div class="mt-3 grid grid-cols-3 gap-3">
+            <div class="vqc-panel col-span-2 p-3">
+              <span class="vqc-label">Anomaly Score · rolling</span>
+              <div class="mt-1 h-[130px]">
+                <canvas id="score-chart"></canvas>
+              </div>
+            </div>
+            <div class="vqc-panel col-span-1 p-3">
+              <span class="vqc-label">Defect Mix</span>
+              <div class="mt-1 flex h-[130px] items-center justify-center">
+                <canvas id="defect-donut"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Middle: stats + controls -->
+        <section class="col-span-12 space-y-3 xl:col-span-4">
+          <!-- Stat tiles -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="vqc-panel px-3 py-3 text-center">
+              <div class="vqc-label">Pass</div>
+              <div id="stat-pass" class="tile-num text-3xl text-green-400">0</div>
+            </div>
+            <div class="vqc-panel px-3 py-3 text-center">
+              <div class="vqc-label">Reject</div>
+              <div id="stat-reject" class="tile-num text-3xl text-red-400">0</div>
+            </div>
+            <div class="vqc-panel px-3 py-3 text-center">
+              <div class="vqc-label">Fault</div>
+              <div id="stat-fault" class="tile-num text-3xl text-amber-400">0</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div class="vqc-panel px-3 py-3 text-center">
+              <div class="vqc-label">Throughput</div>
+              <div class="tile-num text-2xl text-slate-100">
+                <span id="stat-throughput">0</span
+                ><span class="ml-1 text-xs text-slate-500">/min</span>
+              </div>
+            </div>
+            <div class="vqc-panel px-3 py-3 text-center">
+              <div class="vqc-label">Mean Latency</div>
+              <div class="tile-num text-2xl text-slate-100">
+                <span id="stat-latency">0</span
+                ><span class="ml-1 text-xs text-slate-500">ms</span>
+              </div>
+            </div>
+            <div
+              id="zero-lost"
+              class="vqc-panel border-green-500/40 px-3 py-3 text-center"
+            >
+              <div class="vqc-label text-green-400/80">Silent Loss</div>
+              <div class="tile-num text-2xl text-green-400">
+                <span id="zero-lost-num">0</span
+                ><span class="ml-1 text-xs text-green-500/70">lost</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Line controls -->
+          <div class="vqc-panel p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="vqc-label">Line Controls</span>
+              <span id="controls-note" class="vqc-label text-amber-400/80"></span>
+            </div>
+            <div class="flex gap-2">
+              <button
+                id="btn-start"
+                class="btn btn-sm flex-1 border-none bg-green-600 text-white hover:bg-green-500"
+              >
+                ▶ Start
+              </button>
+              <button
+                id="btn-stop"
+                class="btn btn-sm flex-1 border-none bg-red-600 text-white hover:bg-red-500"
+              >
+                ■ Stop
+              </button>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-center justify-between">
+                <span class="vqc-label">Line Speed</span>
+                <span id="speed-value" class="tile-num text-xs text-sky-400"
+                  >50%</span
+                >
+              </div>
+              <input
+                id="speed-slider"
+                type="range"
+                min="0"
+                max="100"
+                value="50"
+                class="range range-xs range-info mt-1"
+              />
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <label
+                class="flex cursor-pointer items-center justify-between rounded bg-[var(--vqc-panel-2)] px-2 py-1.5"
+              >
+                <span class="vqc-label">Camera Loss</span>
+                <input
+                  id="fault-camera"
+                  type="checkbox"
+                  class="toggle toggle-sm toggle-error"
+                />
+              </label>
+              <label
+                class="flex cursor-pointer items-center justify-between rounded bg-[var(--vqc-panel-2)] px-2 py-1.5"
+              >
+                <span class="vqc-label">Reject Fail</span>
+                <input
+                  id="fault-reject"
+                  type="checkbox"
+                  class="toggle toggle-sm toggle-error"
+                />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right: event feed -->
+        <section class="col-span-12 xl:col-span-3">
+          <div class="vqc-panel flex h-full flex-col p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="vqc-label">Live Event Feed</span>
+              <span id="feed-count" class="vqc-label">0</span>
+            </div>
+            <div class="vqc-scroll max-h-[560px] flex-1 overflow-y-auto">
+              <table class="table table-xs">
+                <thead>
+                  <tr class="text-slate-500">
+                    <th class="bg-transparent">ts</th>
+                    <th class="bg-transparent">type</th>
+                    <th class="bg-transparent">product</th>
+                    <th class="bg-transparent">out</th>
+                  </tr>
+                </thead>
+                <tbody id="event-feed"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="mt-3 flex justify-between px-1">
+        <span class="vqc-label">VisionQC · single-WebSocket · binary + JSON frames</span>
+        <span id="drop-stats" class="vqc-label">frames·events streaming</span>
+      </footer>
+    </div>
+
+    <!-- Traceability modal -->
+    <dialog id="product-modal" class="modal">
+      <div class="modal-box vqc-panel max-w-3xl">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 id="modal-title" class="text-lg font-bold text-slate-100">Product</h3>
+          <form method="dialog">
+            <button class="btn btn-sm btn-ghost">✕</button>
+          </form>
+        </div>
+        <div id="modal-body" class="grid grid-cols-2 gap-4 text-sm">
+          <div id="modal-detail" class="space-y-2"></div>
+          <div id="modal-timeline" class="space-y-1"></div>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div>
+            <div class="vqc-label mb-1">Raw</div>
+            <img id="modal-raw" class="w-full rounded border border-[var(--vqc-border)]" alt="raw evidence" />
+          </div>
+          <div>
+            <div class="vqc-label mb-1">Heatmap</div>
+            <img id="modal-heatmap" class="w-full rounded border border-[var(--vqc-border)]" alt="heatmap evidence" />
+          </div>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
+
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>
