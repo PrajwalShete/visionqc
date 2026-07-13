@@ -189,3 +189,11 @@ mkdir -p datasets/MVTecAD && tar -xJf mvtec.tar.xz -C datasets/MVTecAD
 ```
 
 With the extracted dataset in place, `scripts/train.py` skips the download.
+
+## Known issue: pandas 3.x silently empties every dataset split
+
+With pandas >= 3.0, anomalib 2.5.0's `samples.split == Split.TRAIN` filter
+returns all-False (pandas 3 stopped matching str-subclass enums), so
+`train_data`/`test_data` come out empty and training dies with
+`num_samples=0`. The `ai` extra pins `pandas<3`; if you install anomalib
+manually, add `"pandas<3"` yourself. Hit live on EC2 2026-07-13.

@@ -35,6 +35,9 @@ dev = [
 ai = [
     "anomalib[cpu]==2.5.0",
     "torch>=2.6,<2.9",
+    # pandas 3.x breaks anomalib 2.5.0's Split-enum filtering (Series == str-enum
+    # returns all-False -> every dataset subset comes out empty). Hit live 2026-07.
+    "pandas<3",
 ]
 
 [tool.hatch.build.targets.wheel]
