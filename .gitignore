@@ -16,24 +16,24 @@ build/
 htmlcov/
 
 # Datasets & models — never commit (size + MVTec CC BY-NC-SA license)
-datasets/
-data/
+/datasets/
+/data/
 *.ckpt
 *.pt
 *.pth
 *.onnx
 *.xml
 *.bin
-models/
-weights/
-results/
+/models/
+/weights/
+/results/
 
 # Runtime artifacts
 *.db
 *.db-wal
 *.db-shm
-evidence/
-logs/
+/evidence/
+/logs/
 *.log
 
 # Secrets & env
