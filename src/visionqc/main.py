@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -30,10 +31,16 @@ from .db.writer import DBWriterSubscriber
 from .events.bus import EventBus, OverflowPolicy, Subscription
 from .events.schemas import EventType, LineStateChanged, LineStateChangedPayload
 from .evidence.store import EvidenceStore
-from .inference_client.client import HTTPInferenceClient, InferenceClient
+from .inference_client.client import (
+    FakeInferenceClient,
+    HTTPInferenceClient,
+    InferenceClient,
+)
 from .lifecycle.tracker import ProductTracker
 from .orchestrator import Orchestrator
 from .recipes.service import RecipeService
+from .simulator.line import LineSimulator
+from .simulator.source import ImageSource, SyntheticImageSource, build_source
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,7 @@ class AppContext:
     orchestrator: Orchestrator
     ws_manager: ConnectionManager
     line_state: str = "RUNNING"
+    simulator: LineSimulator | None = field(default=None, repr=False)
     _ws_sub: Subscription | None = field(default=None, repr=False)
     _ws_task: asyncio.Task[None] | None = field(default=None, repr=False)
 
@@ -97,7 +105,7 @@ def _build_context(settings: Settings, inference_client: InferenceClient | None)
         inference_timeout_s=settings.inference_timeout_s,
     )
     ws_manager = ConnectionManager(queue_maxsize=settings.ws_queue_maxsize)
-    return AppContext(
+    ctx = AppContext(
         settings=settings,
         bus=bus,
         db=db,
@@ -111,6 +119,47 @@ def _build_context(settings: Settings, inference_client: InferenceClient | None)
         orchestrator=orchestrator,
         ws_manager=ws_manager,
     )
+    ctx.simulator = LineSimulator(
+        bus=bus,
+        tracker=tracker,
+        orchestrator=orchestrator,
+        recipes=recipes,
+        inference=inference,
+        source=_build_initial_source(settings),
+        interval_s=settings.simulator_interval_s,
+        inference_timeout_s=settings.inference_timeout_s,
+        reject_actuation_s=settings.simulator_reject_actuation_s,
+        set_line_state=ctx.set_line_state,
+    )
+    return ctx
+
+
+def _build_initial_source(settings: Settings) -> ImageSource:
+    """Build the simulator's initial image source, falling back to synthetic.
+
+    A misconfigured directory source must not prevent the app from booting; the
+    operator can always switch the source at runtime via ``POST /line/source``.
+    """
+
+    try:
+        return build_source(
+            settings.simulator_source_type,
+            path=settings.simulator_source_dir,
+            defect_rate=settings.simulator_defect_rate,
+        )
+    except (ValueError, FileNotFoundError):
+        logger.warning(
+            "invalid simulator source (%s, %s); falling back to synthetic",
+            settings.simulator_source_type,
+            settings.simulator_source_dir,
+        )
+        return SyntheticImageSource(defect_rate=settings.simulator_defect_rate)
+
+
+def _env_flag(name: str) -> bool:
+    """Return whether an environment variable is set to a truthy value."""
+
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def _ws_bridge(ctx: AppContext) -> None:
@@ -129,6 +178,9 @@ def create_app(
     """Build and return the wired FastAPI application."""
 
     settings = settings or get_settings()
+    if inference_client is None and _env_flag("VISIONQC_INFERENCE_FAKE"):
+        logger.info("VISIONQC_INFERENCE_FAKE set — using in-process FakeInferenceClient")
+        inference_client = FakeInferenceClient()
     ctx = _build_context(settings, inference_client)
 
     @asynccontextmanager
@@ -144,10 +196,14 @@ def create_app(
             overflow=OverflowPolicy.DROP_OLDEST,
         )
         ctx._ws_task = asyncio.create_task(_ws_bridge(ctx), name="ws-bridge")
+        if ctx.simulator is not None and settings.simulator_enabled:
+            await ctx.simulator.start()
         logger.info("VisionQC line controller started")
         try:
             yield
         finally:
+            if ctx.simulator is not None:
+                await ctx.simulator.stop()
             await ctx.tracker.stop_watchdog()
             if ctx._ws_task is not None:
                 ctx._ws_task.cancel()
@@ -163,11 +219,30 @@ def create_app(
     app = FastAPI(title="VisionQC Line Controller", version="0.1.0", lifespan=lifespan)
     app.state.ctx = ctx
 
+    from .api.line import router as line_router
     from .api.routes import router as rest_router
     from .api.routes import ws_router
 
     app.include_router(rest_router)
     app.include_router(ws_router)
+    app.include_router(line_router)
+
+    # Static dashboard + evidence image serving + root redirect (surgical).
+    from pathlib import Path as _Path
+
+    from fastapi.responses import RedirectResponse
+    from fastapi.staticfiles import StaticFiles
+
+    from .api.ws import evidence_router
+
+    app.include_router(evidence_router)
+    static_dir = _Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def _root() -> RedirectResponse:
+        return RedirectResponse(url="/static/index.html")
+
     return app
 
 

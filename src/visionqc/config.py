@@ -68,13 +68,13 @@ class Settings(BaseSettings):
         description="Bounded per-client WebSocket queue size (drop-oldest on overflow).",
     )
 
-    # --- Simulator (placeholder — built by a separate task) -------------
+    # --- Simulator ------------------------------------------------------
     simulator_enabled: bool = Field(
         default=False,
         description="Whether the virtual-line simulator starts with the app.",
     )
     simulator_interval_s: float = Field(
-        default=1.0,
+        default=2.0,
         gt=0,
         description="Interval between simulated triggers, in seconds.",
     )
@@ -82,7 +82,27 @@ class Settings(BaseSettings):
         default=0.0,
         ge=0.0,
         le=1.0,
-        description="Fraction of simulated cycles that inject a fault.",
+        description="Fraction of simulated cycles that inject a fault "
+        "(reserved; runtime faults are toggled via the /line API).",
+    )
+    simulator_source_type: str = Field(
+        default="synthetic",
+        description="Initial image source: 'synthetic' or 'directory'.",
+    )
+    simulator_source_dir: Path | None = Field(
+        default=None,
+        description="Directory of product images when source type is 'directory'.",
+    )
+    simulator_defect_rate: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of synthetic frames rendered with a defect blob.",
+    )
+    simulator_reject_actuation_s: float = Field(
+        default=0.05,
+        ge=0.0,
+        description="Simulated reject-actuator delay between command and confirm.",
     )
 
 
