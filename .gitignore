@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+dist/
+build/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Datasets & models — never commit (size + MVTec CC BY-NC-SA license)
+datasets/
+data/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.xml
+*.bin
+models/
+weights/
+results/
+
+# Runtime artifacts
+*.db
+*.db-wal
+*.db-shm
+evidence/
+logs/
+*.log
+
+# Secrets & env
+.env
+.env.*
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Confidential documents
+*.pdf
