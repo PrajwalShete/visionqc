@@ -613,14 +613,17 @@ function wireControls() {
   slider.addEventListener("input", () => {
     $("speed-value").textContent = slider.value + "%";
   });
-  slider.addEventListener("change", () =>
-    linePost("/line/speed", { speed: Number(slider.value) })
-  );
+  slider.addEventListener("change", () => {
+    // Map slider 1..100% to a trigger interval of 10s (slow) .. 0.25s (fast).
+    const pct = Number(slider.value);
+    const interval = 10 / Math.max(1, pct * 0.4);
+    linePost("/line/speed", { interval_s: Number(interval.toFixed(2)) });
+  });
   $("fault-camera").addEventListener("change", (e) =>
-    linePost("/line/fault", { fault: "camera_loss", enabled: e.target.checked })
+    linePost("/line/faults", { fault: "camera_loss", enabled: e.target.checked })
   );
   $("fault-reject").addEventListener("change", (e) =>
-    linePost("/line/fault", { fault: "reject_failure", enabled: e.target.checked })
+    linePost("/line/faults", { fault: "reject_failure", enabled: e.target.checked })
   );
 }
 
