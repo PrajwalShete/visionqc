@@ -25,6 +25,7 @@ imported lazily only when a non-fake model is requested.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import os
 import time
@@ -82,11 +83,16 @@ def create_app(model: InferenceModel) -> FastAPI:
     """
 
     state = WorkerState(model=model)
+    # Model access is serialized: TorchInferencer is not guaranteed thread-safe
+    # and a single CUDA context must not see concurrent forward passes. Running
+    # inference in a worker thread (under this lock) keeps /health responsive
+    # even while a slow or wedged inference is in flight.
+    infer_lock = asyncio.Lock()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         try:
-            model.warmup()
+            await asyncio.to_thread(model.warmup)
             state.warmed_up = True
         except Exception as exc:
             # Leave warmed_up=False; /health will report not-ready and the
@@ -114,7 +120,8 @@ def create_app(model: InferenceModel) -> FastAPI:
 
         start = time.perf_counter()
         try:
-            result = state.model.infer(image)
+            async with infer_lock:
+                result = await asyncio.to_thread(state.model.infer, image)
         except Exception as exc:
             return JSONResponse(status_code=500, content={"error": f"inference failed: {exc}"})
         latency_ms = (time.perf_counter() - start) * 1000.0

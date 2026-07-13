@@ -16,6 +16,7 @@ import base64
 import hashlib
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urljoin
 
 import httpx
 
@@ -41,6 +42,10 @@ class InferenceClient(Protocol):
         """Run inference on JPEG ``image`` bytes; raise on failure."""
         ...
 
+    async def health(self) -> dict[str, object] | None:
+        """Probe the worker's health endpoint; ``None`` when unreachable."""
+        ...
+
     async def close(self) -> None:
         """Release any underlying resources."""
         ...
@@ -63,6 +68,8 @@ class HTTPInferenceClient:
 
     def __init__(self, url: str, timeout_s: float) -> None:
         self._url = url
+        # The worker serves /health next to /infer; derive it from the same base.
+        self._health_url = urljoin(url, "health")
         self._timeout_s = timeout_s
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout_s))
 
@@ -96,6 +103,17 @@ class HTTPInferenceClient:
         except (KeyError, TypeError, ValueError) as exc:
             raise InferenceUnavailable(f"incomplete inference response: {exc}") from exc
 
+    async def health(self) -> dict[str, object] | None:
+        """Live-probe the worker's /health; ``None`` if unreachable/errored."""
+
+        try:
+            response = await self._client.get(self._health_url, timeout=httpx.Timeout(1.0))
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -103,8 +121,11 @@ class HTTPInferenceClient:
 class FakeInferenceClient:
     """Deterministic in-process client — score derived from the image hash.
 
-    Useful for tests and GPU-less local runs. ``fail_on`` lets a test force an
-    :class:`InferenceUnavailable` for specific image payloads.
+    Useful for tests and GPU-less local runs. Delegates to the same
+    :class:`visionqc_inference.model.FakeModel` the fake *worker* serves, so the
+    in-process fake and the fake worker agree on scores AND produce the same
+    synthetic heatmap overlays (the local demo shows real evidence imagery).
+    ``fail=True`` lets a test force an :class:`InferenceUnavailable`.
     """
 
     def __init__(
@@ -112,10 +133,12 @@ class FakeInferenceClient:
         model_version: str = "fake-1.0",
         latency_ms: float = 5.0,
         fail: bool = False,
+        heatmaps: bool = True,
     ) -> None:
         self._model_version = model_version
         self._latency_ms = latency_ms
         self._fail = fail
+        self._heatmaps = heatmaps
 
     @staticmethod
     def score_for(image: bytes) -> float:
@@ -127,12 +150,30 @@ class FakeInferenceClient:
     async def infer(self, image: bytes) -> InferenceResponse:
         if self._fail:
             raise InferenceUnavailable("fake client configured to fail")
+        heatmap: bytes | None = None
+        if self._heatmaps:
+            # Same code path as the fake worker (numpy/cv2 only, no ML deps).
+            from visionqc_inference.model import FakeModel
+
+            heatmap = FakeModel(model_version=self._model_version).infer(image).heatmap_jpeg
         return InferenceResponse(
             score=self.score_for(image),
             model_version=self._model_version,
             latency_ms=self._latency_ms,
-            heatmap_jpeg=None,
+            heatmap_jpeg=heatmap,
         )
+
+    async def health(self) -> dict[str, object] | None:
+        """The in-process fake is always healthy (unless configured to fail)."""
+
+        if self._fail:
+            return None
+        return {
+            "status": "ok",
+            "model_version": self._model_version,
+            "warmed_up": True,
+            "device": "cpu",
+        }
 
     async def close(self) -> None:
         return None

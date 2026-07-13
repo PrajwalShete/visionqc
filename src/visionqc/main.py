@@ -66,10 +66,28 @@ class AppContext:
     _ws_sub: Subscription | None = field(default=None, repr=False)
     _ws_task: asyncio.Task[None] | None = field(default=None, repr=False)
 
-    def worker_status(self) -> str:
-        """Report inference worker health for the health endpoint."""
+    async def worker_status(self) -> dict[str, object]:
+        """Live-probe the inference worker and combine with the degraded flag.
 
-        return "degraded" if self.orchestrator.degraded else "ok"
+        Statuses: ``ok`` (probe healthy), ``starting`` (up, not warmed up),
+        ``degraded`` (reachable but the last inference failed), ``unreachable``
+        (probe failed — the fail-safe path is active).
+        """
+
+        probe = await self.inference.health()
+        if probe is None:
+            status = "unreachable"
+        elif not probe.get("warmed_up", False):
+            status = "starting"
+        elif self.orchestrator.degraded:
+            status = "degraded"
+        else:
+            status = "ok"
+        return {
+            "status": status,
+            "model_version": (probe or {}).get("model_version"),
+            "device": (probe or {}).get("device"),
+        }
 
     async def set_line_state(self, state: str, reason: str | None = None) -> None:
         """Update the line state and publish a ``LineStateChanged`` event."""

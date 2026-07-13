@@ -46,10 +46,12 @@ async def health(request: Request) -> dict[str, Any]:
 
     ctx = _ctx(request)
     reconciliation = ctx.tracker.reconcile().as_dict()
+    worker = await ctx.worker_status()
     return {
         "status": "ok",
         "line_state": ctx.line_state,
-        "worker_status": ctx.worker_status(),
+        "worker_status": worker["status"],
+        "worker": worker,
         "ws_clients": ctx.ws_manager.client_count,
         "reconciliation": reconciliation,
         "zero_silent_loss": reconciliation["lost"] == 0,

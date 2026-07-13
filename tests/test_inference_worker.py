@@ -222,3 +222,38 @@ async def test_real_http_client_times_out_gracefully(live_worker: _LiveWorker) -
             await client.infer(_sample_jpeg(1))
     finally:
         await client.close()
+
+
+async def test_real_http_client_health_probe(live_worker: _LiveWorker) -> None:
+    # health() is derived from the infer URL and reports the worker's live state.
+    client = HTTPInferenceClient(f"{live_worker.base_url}/infer", timeout_s=5.0)
+    try:
+        probe = await client.health()
+        assert probe is not None
+        assert probe["status"] == "ok"
+        assert probe["warmed_up"] is True
+        assert probe["model_version"] == "fake-1.0"
+    finally:
+        await client.close()
+
+
+async def test_health_probe_unreachable_returns_none() -> None:
+    # A dead worker must surface as None (→ /health reports "unreachable"),
+    # never an exception into the caller.
+    client = HTTPInferenceClient("http://127.0.0.1:1/infer", timeout_s=1.0)
+    try:
+        assert await client.health() is None
+    finally:
+        await client.close()
+
+
+async def test_fake_client_produces_decodable_heatmap() -> None:
+    # The in-process fake shares FakeModel with the fake worker: same score,
+    # real JPEG heatmap evidence for the local demo.
+    fake = FakeInferenceClient()
+    response = await fake.infer(_sample_jpeg(7))
+    assert response.heatmap_jpeg is not None
+    assert response.heatmap_jpeg[:2] == b"\xff\xd8"
+    assert response.score == pytest.approx(FakeInferenceClient.score_for(_sample_jpeg(7)))
+    probe = await fake.health()
+    assert probe is not None and probe["status"] == "ok"

@@ -266,7 +266,9 @@ class ConnectionManager:
         if ctx is not None:
             payload["line_state"] = getattr(ctx, "line_state", "UNKNOWN")
             try:
-                payload["worker_status"] = ctx.worker_status()
+                worker = await ctx.worker_status()
+                payload["worker_status"] = worker["status"]
+                payload["worker"] = worker
             except Exception:  # pragma: no cover - defensive
                 payload["worker_status"] = "unknown"
             try:
