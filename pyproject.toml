@@ -29,9 +29,16 @@ dev = [
     "ruff>=0.5",
     "httpx>=0.27",
 ]
+# GPU/EC2 training + real inference. Install on the box, NOT in the main test env.
+# Local dev / CI: anomalib[cpu] (torch >=2.6,<=2.8). On the GPU box override with
+# anomalib[cu126] (see docs/TRAINING.md) — NEVER [cu130] (broken torch 2.9).
+ai = [
+    "anomalib[cpu]==2.5.0",
+    "torch>=2.6,<2.9",
+]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/visionqc"]
+packages = ["src/visionqc", "src/visionqc_inference"]
 
 [tool.ruff]
 line-length = 100
