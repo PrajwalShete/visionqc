@@ -27,9 +27,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 CATEGORIES = ("bottle", "hazelnut", "metal_nut")
+# anomalib 2.5.0's bundled mirror URL is dead (404). This is the working direct
+# link from MVTec's official downloads page (verified 2026-07); the archive must
+# match anomalib's expected SHA-256 either way.
+MVTEC_ARCHIVE_URL = (
+    "https://www.mydrive.ch/shares/150996/b52ecdcbf521176e9db9c731f2304b27/"
+    "download/420938113-1629960298/mvtec_anomaly_detection.tar.xz"
+)
+MVTEC_ARCHIVE_SHA256 = "cf4313b13603bec67abb49ca959488f7eedce2a9f7795ec54446c649ac98cd3d"
 MVTEC_MANUAL_URL = (
-    "https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads "
-    "(or the anomalib mydrive.ch mirror) — extract into --data-root/<category>/"
+    f"curl -A 'Mozilla/5.0' -o mvtec.tar.xz '{MVTEC_ARCHIVE_URL}'\n"
+    f"    sha256sum mvtec.tar.xz   # must be {MVTEC_ARCHIVE_SHA256}\n"
+    "    mkdir -p <data-root> && tar -xJf mvtec.tar.xz -C <data-root>"
 )
 
 

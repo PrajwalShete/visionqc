@@ -172,3 +172,20 @@ Run the worker as `qc-inference.service` with `Restart=on-failure`,
 `RestartSec=2`, a `StartLimitBurst` cap, and readiness gated on `/health`
 returning `warmed_up: true`. The app tolerates worker absence — inference
 failures become FAULT dispositions with a "degraded" banner rather than a hang.
+
+---
+
+## 6. Known issue: anomalib's bundled download URL is dead (404)
+
+anomalib 2.5.0's `MVTecAD` auto-download points at a retired mydrive.ch share.
+Download manually from MVTec's official page (link verified 2026-07) and verify
+the checksum — the archive is byte-identical to what anomalib expects:
+
+```bash
+curl -A "Mozilla/5.0" -o mvtec.tar.xz \
+  "https://www.mydrive.ch/shares/150996/b52ecdcbf521176e9db9c731f2304b27/download/420938113-1629960298/mvtec_anomaly_detection.tar.xz"
+sha256sum mvtec.tar.xz  # cf4313b13603bec67abb49ca959488f7eedce2a9f7795ec54446c649ac98cd3d
+mkdir -p datasets/MVTecAD && tar -xJf mvtec.tar.xz -C datasets/MVTecAD
+```
+
+With the extracted dataset in place, `scripts/train.py` skips the download.
